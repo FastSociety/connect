@@ -1,53 +1,108 @@
 
-var connect = require('..');
-var http = require('http');
-var request = require('supertest');
-var should = require('should');
+var connect = require('../')
+  , http = require('http');
 
 describe('app.use()', function(){
   var app;
 
   beforeEach(function(){
     app = connect();
-  });
+  })
 
   describe('with a connect app', function(){
     it('should mount', function(done){
       var blog = connect();
-
+    
       blog.use(function(req, res){
         req.url.should.equal('/');
         res.end('blog');
       });
-
+    
       app.use('/blog', blog);
-
-      request(app)
+    
+      app.request()
       .get('/blog')
-      .expect(200, 'blog', done);
-    });
+      .expect('blog', done);
+    })
 
     it('should retain req.originalUrl', function(done){
       var app = connect();
-
+    
       app.use('/blog', function(req, res){
         res.end(req.originalUrl);
       });
-
-      request(app)
+    
+      app.request()
       .get('/blog/post/1')
-      .expect(200, '/blog/post/1', done);
-    });
+      .expect('/blog/post/1', done);
+    })
 
     it('should adjust req.url', function(done){
+      var app = connect();
+    
+      app.use('/blog', function(req, res){
+        res.end(req.url);
+      });
+    
+      app.request()
+      .get('/blog/post/1')
+      .expect('/post/1', done);
+    })
+
+    it('should ignore FQDN in search', function (done) {
+      var app = connect();
+
+      app.use('/proxy', function (req, res) {
+        res.end(req.url);
+      });
+
+      app.request()
+      .get('/proxy?url=http://example.com/blog/post/1')
+      .expect('/?url=http://example.com/blog/post/1', done);
+    });
+
+    it('should adjust FQDN req.url', function(done){
+      var app = connect();
+
       app.use('/blog', function(req, res){
         res.end(req.url);
       });
 
-      request(app)
-      .get('/blog/post/1')
-      .expect(200, '/post/1', done);
-    });
+      app.request()
+      .get('http://example.com/blog/post/1')
+      .expect('http://example.com/post/1', done);
+    })
+
+    it('should adjust FQDN req.url with multiple handlers', function(done){
+      var app = connect();
+
+      app.use(function(req,res,next) {
+        next();
+      });
+
+      app.use('/blog', function(req, res){
+        res.end(req.url);
+      });
+
+      app.request()
+      .get('http://example.com/blog/post/1')
+      .expect('http://example.com/post/1', done);
+    })
+
+    it('should adjust FQDN req.url with multiple routed handlers', function(done) {
+      var app = connect();
+    
+      app.use('/blog', function(req,res,next) {       
+        next();
+      });
+      app.use('/blog', function(req, res) {
+        res.end(req.url);
+      });
+
+      app.request()
+      .get('http://example.com/blog/post/1')
+      .expect('http://example.com/post/1', done);
+    })
 
     it('should strip trailing slash', function(done){
       var blog = connect();
@@ -58,11 +113,11 @@ describe('app.use()', function(){
       });
     
       app.use('/blog/', blog);
-
-      request(app)
+    
+      app.request()
       .get('/blog')
       .expect('blog', done);
-    });
+    })
 
     it('should set .route', function(){
       var blog = connect();
@@ -72,9 +127,11 @@ describe('app.use()', function(){
       app.route.should.equal('/');
       blog.route.should.equal('/blog');
       admin.route.should.equal('/admin');
-    });
+    })
 
     it('should not add trailing slash to req.url', function(done) {
+      var app = connect();
+
       app.use('/admin', function(req, res, next) {
         next();
       });
@@ -83,7 +140,7 @@ describe('app.use()', function(){
         res.end(req.url);
       });
 
-      request(app)
+      app.request()
       .get('/admin')
       .expect('/admin', done);
     })
@@ -95,78 +152,12 @@ describe('app.use()', function(){
         req.url.should.equal('/');
         res.end('blog');
       });
-
+    
       app.use('/blog', blog);
-
-      request(app)
+    
+      app.request()
       .get('/blog')
       .expect('blog', done);
-    });
-  });
-
-  describe('error handling', function(){
-    it('should send errors to airty 4 fns', function(done){
-      app.use(function(req, res, next){
-        next(new Error('msg'));
-      })
-      app.use(function(err, req, res, next){
-        res.end('got error ' + err.message);
-      });
-
-      request(app)
-      .get('/')
-      .expect('got error msg', done);
-    })
-
-    it('should skip to non-error middleware', function(done){
-      var invoked = false;
-
-      app.use(function(req, res, next){
-        next(new Error('msg'));
-      })
-      app.use(function(req, res, next){
-        invoked = true;
-        next();
-      });
-      app.use(function(err, req, res, next){
-        res.end(invoked ? 'invoked' : err.message);
-      });
-
-      request(app)
-      .get('/')
-      .expect(200, 'msg', done);
-    })
-
-    it('should stack error fns', function(done){
-      app.use(function(req, res, next){
-        next(new Error('msg'));
-      })
-      app.use(function(err, req, res, next){
-        res.setHeader('X-Error', err.message);
-        next(err);
-      });
-      app.use(function(err, req, res, next){
-        res.end('got error ' + err.message);
-      });
-
-      request(app)
-      .get('/')
-      .expect('X-Error', 'msg')
-      .expect(200, 'got error msg', done);
-    })
-
-    it('should invoke error stack even when headers sent', function(done){
-      app.use(function(req, res, next){
-        res.end('0');
-        next(new Error('msg'));
-      });
-      app.use(function(err, req, res, next){
-        done();
-      });
-
-      request(app)
-      .get('/')
-      .end(function(){});
     })
   })
 
@@ -175,13 +166,13 @@ describe('app.use()', function(){
       req.url.should.equal('/');
       res.end('blog');
     });
-
+  
     app.use('/blog', blog);
-
-    request(app)
+  
+    app.request()
     .get('/BLog')
     .expect('blog', done);
-  });
+  })
 
   it('should be case insensitive (mixed-case route, lower-case request)', function(done){
     var blog = http.createServer(function(req, res){
@@ -191,10 +182,10 @@ describe('app.use()', function(){
 
     app.use('/BLog', blog);
 
-    request(app)
+    app.request()
     .get('/blog')
     .expect('blog', done);
-  });
+  })
 
   it('should be case insensitive (mixed-case route, mixed-case request)', function(done){
     var blog = http.createServer(function(req, res){
@@ -204,29 +195,8 @@ describe('app.use()', function(){
 
     app.use('/BLog', blog);
 
-    request(app)
+    app.request()
     .get('/blOG')
     .expect('blog', done);
-  });
-
-  it('should ignore fn.arity > 4', function(done){
-    var invoked = [];
-
-    app.use(function(req, res, next, _a, _b){
-      invoked.push(0)
-      next();
-    });
-    app.use(function(req, res, next){
-      invoked.push(1)
-      next(new Error('err'));
-    });
-    app.use(function(err, req, res, next){
-      invoked.push(2);
-      res.end(invoked.join(','));
-    });
-
-    request(app)
-    .get('/')
-    .expect(200, '1,2', done);
-  });
-});
+  })
+})

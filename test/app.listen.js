@@ -1,6 +1,5 @@
 
-var connect = require('..');
-var request = require('supertest');
+var connect = require('../');
 
 describe('app.listen()', function(){
   it('should wrap in an http.Server', function(done){
@@ -10,10 +9,10 @@ describe('app.listen()', function(){
       res.end();
     });
 
-    app.listen(0, function(){
-      request(app)
-      .get('/')
+    app.listen(5555, function(){
+      app
+      .request('/')
       .expect(200, done);
     });
-  });
-});
+  })
+})

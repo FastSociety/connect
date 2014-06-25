@@ -1,21 +1,51 @@
 
-var connect = require('..');
-var request = require('supertest');
-var should = require('should');
+var connect = require('../');
 
 describe('app', function(){
-  var app;
-
-  beforeEach(function(){
-    app = connect();
-  });
-
   it('should inherit from event emitter', function(done){
+    var app = connect();
     app.on('foo', done);
     app.emit('foo');
-  });
+  })
 
-  it('should work as middleware', function(done){
+  it('should not obscure FQDNs', function(done){
+    var app = connect();
+
+    app.use(function(req, res){
+      res.end(req.url);
+    });
+
+    app.request()
+    .get('http://example.com/foo')
+    .expect('http://example.com/foo', done);
+  })
+
+  it('should allow old-style constructor middleware', function(done){
+    var app = connect(
+        connect.json()
+      , connect.multipart()
+      , connect.urlencoded()
+      , function(req, res){ res.end(JSON.stringify(req.body)) });
+
+    app.stack.should.have.length(4);
+
+    app.request()
+      .post('/')
+      .set('Content-Type', 'application/json')
+      .write('{"foo":"bar"}')
+      .expect('{"foo":"bar"}', done);
+  })
+
+  it('should allow old-style .createServer()', function(){
+    var app = connect.createServer(
+        connect.json()
+      , connect.multipart()
+      , connect.urlencoded());
+
+    app.stack.should.have.length(3);
+  })
+
+  it('should work as middlware', function(done){
     var http = require('http');
 
     // custom server handler array
@@ -51,120 +81,12 @@ describe('app', function(){
         });
       });
     });
-  });
-
-  it('should escape the 500 response body', function(done){
-    app.use(function(req, res, next){
-      next(new Error('error!'));
-    });
-    request(app)
-    .get('/')
-    .expect(/Error: error!<br>/)
-    .expect(/<br> &nbsp; &nbsp;at/)
-    .expect(500, done);
   })
 
-  describe('404 handler', function(){
-    it('should escape the 404 response body', function(done){
-      app.handle({ method: 'GET', url: '/foo/<script>stuff</script>' }, {
-        setHeader: function(){},
-        end: function(str){
-          this.statusCode.should.equal(404);
-          str.should.equal('Cannot GET /foo/&lt;script&gt;stuff&lt;/script&gt;\n');
-          done();
-        }
-      });
-    });
-
-    it('shoud not fire after headers sent', function(done){
-      var app = connect();
-
-      app.use(function(req, res, next){
-        res.write('body');
-        res.end();
-        process.nextTick(next);
-      })
-
-      request(app)
-      .get('/')
-      .expect(200, done);
-    })
-
-    it('shoud have no body for HEAD', function(done){
-      var app = connect();
-
-      request(app)
-      .head('/')
-      .expect(404, '', done);
-    })
+  it('should escape the 404 response body', function(done){
+    var app = connect();
+    app.request()
+    .get('/foo/<script>stuff</script>')
+    .expect('Cannot GET /foo/&lt;script&gt;stuff&lt;/script&gt;\n', done);
   })
-
-  describe('error handler', function(){
-    it('should have escaped response body', function(done){
-      var app = connect();
-
-      app.use(function(req, res, next){
-        throw new Error('<script>alert()</script>');
-      })
-
-      request(app)
-      .get('/')
-      .expect(500, /&lt;script&gt;alert\(\)&lt;\/script&gt;/, done);
-    })
-
-    it('should use custom error code', function(done){
-      var app = connect();
-
-      app.use(function(req, res, next){
-        var err = new Error('ack!');
-        err.status = 503;
-        throw err;
-      })
-
-      request(app)
-      .get('/')
-      .expect(503, done);
-    })
-
-    it('should keep error statusCode', function(done){
-      var app = connect();
-
-      app.use(function(req, res, next){
-        res.statusCode = 503;
-        throw new Error('ack!');
-      })
-
-      request(app)
-      .get('/')
-      .expect(503, done);
-    })
-
-    it('shoud not fire after headers sent', function(done){
-      var app = connect();
-
-      app.use(function(req, res, next){
-        res.write('body');
-        res.end();
-        process.nextTick(function() {
-          next(new Error('ack!'));
-        });
-      })
-
-      request(app)
-      .get('/')
-      .expect(200, done);
-    })
-
-    it('shoud have no body for HEAD', function(done){
-      var app = connect();
-
-      app.use(function(req, res, next){
-        throw new Error('ack!');
-      });
-
-      request(app)
-      .head('/')
-      .expect(500, '', done);
-    });
-  });
-});
+})
